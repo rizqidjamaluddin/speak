@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#080810">
+  <link rel="manifest" href="/manifest.json">
+  <title>Speak</title>
+  <!-- Apply saved theme before first paint to avoid flash -->
+  <script>
+    if (localStorage.getItem('speak_theme') === 'light') {
+      document.documentElement.classList.add('light');
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #080810;
+      --surface:    #0f0f1c;
+      --text:       #ede8dc;
+      --muted:      rgba(237,232,220,0.32);
+      --accent:     #ff6340;
+      --accent-bg:  rgba(255,99,64,0.12);
+      --border:     rgba(255,255,255,0.07);
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Epilogue', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* ── App shell ───────────────────────── */
+    #app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* ── Canvas ──────────────────────────── */
+    #canvas {
+      flex: 1;
+      min-height: 0;
+      padding: 44px 36px 16px;
+      display: flex;
+      align-items: flex-start;
+      cursor: text;
+    }
+
+    #editor {
+      width: 100%;
+      outline: none;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: 'Epilogue', system-ui, sans-serif;
+      font-weight: 900;
+      font-size: 80px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      white-space: pre-wrap;
+      caret-color: var(--accent);
+    }
+
+    #editor:empty::before {
+      content: attr(data-placeholder);
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    /* ── Toolbar ─────────────────────────── */
+    #toolbar {
+      flex-shrink: 0;
+      display: flex;
+      gap: 10px;
+      padding: 10px 18px 14px;
+    }
+
+    .btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      padding: 17px 12px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: 'Epilogue', system-ui, sans-serif;
+      font-weight: 700;
+      font-size: 16px;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s ease, opacity 0.1s ease;
+      user-select: none;
+    }
+
+    .btn:active { transform: scale(0.95); opacity: 0.65; }
+
+    #wipe-btn {
+      background: var(--accent-bg);
+      border-color: rgba(255,99,64,0.22);
+      color: var(--accent);
+    }
+
+    /* ── History panel ───────────────────── */
+    #history-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      transform: translateY(100%);
+      transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    #history-panel.open { transform: translateY(0); }
+
+    #panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 22px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #panel-header h2 {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    #close-btn {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 18px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s, opacity 0.1s;
+    }
+
+    #close-btn:active { transform: scale(0.92); opacity: 0.6; }
+
+    #history-scroll {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 14px 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* drag handle at top */
+    #panel-handle {
+      width: 42px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 12px auto 0;
+      flex-shrink: 0;
+    }
+
+    .entry {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 17px 20px;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.1s ease, border-color 0.15s, background 0.15s;
+    }
+
+    .entry:active {
+      transform: scale(0.97);
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+
+    .entry-text {
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 1.35;
+      color: var(--text);
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .entry-time {
+      margin-top: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    #empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--muted);
+      padding-bottom: 80px;
+    }
+
+    #empty-state p {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Wipe flash ──────────────────────── */
+    @keyframes wipeFlash {
+      0%   { opacity: 1; }
+      40%  { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
+    #wipe-btn.flashing { animation: wipeFlash 0.35s ease; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <div id="canvas">
+    <div
+      id="editor"
+      contenteditable="true"
+      spellcheck="true"
+      autocorrect="on"
+      autocapitalize="sentences"
+      data-placeholder="Type here…"
+      role="textbox"
+      aria-label="Message"
+      aria-multiline="true"
+    ></div>
+  </div>
+
+  <div id="toolbar">
+    <button class="btn" id="history-btn" aria-label="Open message history">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      History
+    </button>
+    <button class="btn" id="wipe-btn" aria-label="Wipe current message">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6l-1 14H6L5 6"/>
+        <path d="M10 11v6"/><path d="M14 11v6"/>
+        <path d="M9 6V4h6v2"/>
+      </svg>
+      Wipe
+    </button>
+  </div>
+</div>
+
+<!-- History panel -->
+<div id="history-panel" role="dialog" aria-modal="true" aria-label="Message history">
+  <div id="panel-handle" aria-hidden="true"></div>
+  <div id="panel-header">
+    <h2>History</h2>
+    <button id="close-btn" aria-label="Close history">✕</button>
+  </div>
+  <div id="history-scroll" role="list"></div>
+</div>
+
+<script>
+  const editor   = document.getElementById('editor');
+  const canvas   = document.getElementById('canvas');
+  const panel    = document.getElementById('history-panel');
+  const scroll   = document.getElementById('history-scroll');
+  const wipeBtn  = document.getElementById('wipe-btn');
+  const histBtn  = document.getElementById('history-btn');
+  const closeBtn = document.getElementById('close-btn');
+
+  // ── Storage ────────────────────────────────────────────────
+  const KEY = 'speak_v1';
+
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); }
+    catch { return []; }
+  }
+
+  function pushToHistory(text) {
+    if (!text.trim()) return;
+    const h = getHistory();
+    h.unshift({ text: text.trim(), ts: Date.now() });
+    localStorage.setItem(KEY, JSON.stringify(h.slice(0, 300)));
+  }
+
+  // ── Text fitting ───────────────────────────────────────────
+  let rafId = null;
+
+  function scheduleFit() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(fitText);
+  }
+
+  function fitText() {
+    rafId = null;
+    const text = editor.textContent;
+    if (!text.trim()) { editor.style.fontSize = ''; return; }
+
+    const vv = window.visualViewport;
+    const totalH = vv ? vv.height : window.innerHeight;
+    const availH = totalH - 88 - 76; // approx toolbar + padding
+    const availW = canvas.clientWidth - 72;
+
+    // Binary-search the largest font size that fits
+    let lo = 14, hi = 500;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      editor.style.fontSize = mid + 'px';
+      if (editor.scrollHeight <= availH && editor.scrollWidth <= availW) lo = mid;
+      else hi = mid;
+    }
+    editor.style.fontSize = lo + 'px';
+  }
+
+  editor.addEventListener('input', scheduleFit);
+  window.addEventListener('resize', scheduleFit);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleFit);
+
+  // Tap anywhere in canvas → focus editor
+  canvas.addEventListener('click', () => editor.focus());
+
+  // ── Wipe ──────────────────────────────────────────────────
+  wipeBtn.addEventListener('click', () => {
+    const text = editor.textContent;
+    if (!text.trim()) return;
+    pushToHistory(text);
+    editor.textContent = '';
+    scheduleFit();
+    editor.focus();
+    wipeBtn.classList.remove('flashing');
+    void wipeBtn.offsetWidth; // force reflow to restart animation
+    wipeBtn.classList.add('flashing');
+  });
+
+  wipeBtn.addEventListener('animationend', () => wipeBtn.classList.remove('flashing'));
+
+  // ── History panel ─────────────────────────────────────────
+  function fmtTime(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return 'Today · ' + t;
+    const yesterday = new Date(now - 86400000);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday · ' + t;
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + t;
+  }
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderPanel() {
+    const h = getHistory();
+    scroll.innerHTML = '';
+
+    if (!h.length) {
+      scroll.innerHTML = `
+        <div id="empty-state">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.35">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+          </svg>
+          <p>No messages yet</p>
+        </div>`;
+      return;
+    }
+
+    h.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'entry';
+      el.setAttribute('role', 'listitem button');
+      el.setAttribute('tabindex', '0');
+      el.innerHTML = `
+        <div class="entry-text">${esc(item.text)}</div>
+        <div class="entry-time">${fmtTime(item.ts)}</div>
+      `;
+      el.addEventListener('click', () => {
+        editor.textContent = item.text;
+        scheduleFit();
+        closePanel();
+        requestAnimationFrame(() => {
+          editor.focus();
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(editor);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        });
+      });
+      scroll.appendChild(el);
+    });
+  }
+
+  function openPanel()  { renderPanel(); panel.classList.add('open'); }
+  function closePanel() { panel.classList.remove('open'); }
+
+  histBtn.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+
+  // Swipe down to close
+  let touchStartY = 0;
+  panel.addEventListener('touchstart', e => {
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  panel.addEventListener('touchend', e => {
+    if (e.changedTouches[0].clientY - touchStartY > 70) closePanel();
+  }, { passive: true });
+
+  // ── Orientation lock ──────────────────────────────────
+  let orientationLocked = false;
+  async function tryLockLandscape() {
+    if (orientationLocked || !screen.orientation?.lock) return;
+    try {
+      await screen.orientation.lock('landscape');
+      orientationLocked = true;
+    } catch {
+      // Expected to fail in iOS regular browser tab — handled by manifest + nudge
+    }
+  }
+  document.addEventListener('pointerdown', tryLockLandscape, { once: true });
+
+  // Auto-focus on load
+  editor.focus();
+</script>
+</body>
+</html>

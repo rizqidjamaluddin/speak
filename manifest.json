@@ -1,0 +1,18 @@
+{
+  "name": "Speak",
+  "short_name": "Speak",
+  "description": "Bedside communication tool — type a message, show it to someone.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#080810",
+  "theme_color": "#080810",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%23080810'/><text x='96' y='130' font-size='110' text-anchor='middle' font-family='system-ui' font-weight='900' fill='%23ede8dc'>S</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
