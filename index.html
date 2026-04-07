@@ -307,17 +307,46 @@
 
   // ── Storage ────────────────────────────────────────────────
   const KEY = 'speak_v1';
+  let lastSavedText = '';
+  let autoSaveTimer = null;
 
   function getHistory() {
     try { return JSON.parse(localStorage.getItem(KEY) || '[]'); }
     catch { return []; }
   }
 
-  function pushToHistory(text) {
+  function pushToHistory(text, options = {}) {
     if (!text.trim()) return;
+    const trimmed = text.trim();
     const h = getHistory();
-    h.unshift({ text: text.trim(), ts: Date.now() });
+
+    // Check if this is an append to the previous entry
+    const isAppend = options.checkAppend &&
+                     h.length > 0 &&
+                     trimmed.startsWith(h[0].text) &&
+                     trimmed !== h[0].text;
+
+    if (isAppend) {
+      // Override the most recent entry
+      h[0] = { text: trimmed, ts: Date.now() };
+    } else {
+      // Add new entry
+      h.unshift({ text: trimmed, ts: Date.now() });
+    }
+
     localStorage.setItem(KEY, JSON.stringify(h.slice(0, 300)));
+    lastSavedText = trimmed;
+  }
+
+  // Auto-save with debounce
+  function scheduleAutoSave() {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      const text = editor.textContent.trim();
+      if (text && text !== lastSavedText) {
+        pushToHistory(text, { checkAppend: true });
+      }
+    }, 4500); // 4.5 second debounce
   }
 
   // ── Text fitting ───────────────────────────────────────────
@@ -349,7 +378,10 @@
     editor.style.fontSize = lo + 'px';
   }
 
-  editor.addEventListener('input', scheduleFit);
+  editor.addEventListener('input', () => {
+    scheduleFit();
+    scheduleAutoSave();
+  });
   window.addEventListener('resize', scheduleFit);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleFit);
 
@@ -360,7 +392,9 @@
   wipeBtn.addEventListener('click', () => {
     const text = editor.textContent;
     if (!text.trim()) return;
-    pushToHistory(text);
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    pushToHistory(text); // Explicit wipe always creates new entry
+    lastSavedText = ''; // Reset so next typing session is fresh
     editor.textContent = '';
     scheduleFit();
     editor.focus();
